@@ -1,7 +1,6 @@
-import scipy.io as scio
 import numpy as np
 import struct
-
+import pandas as pd
 
 def dbinv(x):
     """dB를 mW로 변환하는 함수."""
@@ -130,11 +129,14 @@ def read_bfee(bytes_data):
         for j in range(csi_entry.Nrx * csi_entry.Ntx):
             # 실수부 추출
             tmp_real = (payload[index // 8] >> remainder) | (payload[index // 8 + 1] << (8 - remainder))
-            real_part = float(np.int8(tmp_real))
+            # real_part = float(np.int8(tmp_real))
+            real_part = float(np.array(tmp_real).astype(np.int8))
 
             # 허수부 추출
             tmp_imag = (payload[index // 8 + 1] >> remainder) | (payload[index // 8 + 2] << (8 - remainder))
-            imag_part = float(np.int8(tmp_imag))
+            # imag_part = float(np.int8(tmp_imag))
+            imag_part = float(np.array(tmp_imag).astype(np.int8))
+
 
             csi[j // csi_entry.Nrx, j % csi_entry.Nrx, i] = real_part + 1j * imag_part
             index += 16
@@ -232,9 +234,34 @@ def csi_get_all(filename):
     return cfr_array, timestamp
 
 
-if __name__ == "__main__":
-    # print(scio.loadmat("user1-1-1-1-10-r1.dat"))
-    cfr_array, timestamp = csi_get_all("user1-1-1-1-10-r1.dat")
+def csi_file_process(dat_file_dir):
+    data_backbone = {}
 
-    # print(cfr_array)
-    # print(print(cfr_array))
+    date = int(dat_file_dir.split("/")[-3])
+
+    filename = dat_file_dir.split("/")[-1]
+    filename = filename.replace("user", "").replace(".dat", "").replace("r", "")
+    split_filename = filename.split('-')
+
+    user = int(split_filename[0])
+    gesture_id = int(split_filename[1])
+    torso_loc_id = int(split_filename[2])
+    face_loc_id = int(split_filename[3])
+    repetition_num = int(split_filename[4])
+    rx_id = int(split_filename[5])
+    csi_data = csi_get_all(dat_file_dir)        
+
+    data_backbone["date"] = date
+    data_backbone["user"] = user
+    # data_backbone["gesture"] = gesture_name_parser(date, user, gesture_id)
+    data_backbone["gesture"] = gesture_id
+    data_backbone["torso"] = torso_loc_id
+    data_backbone["face"] = face_loc_id
+    data_backbone["repetition"] = repetition_num
+    data_backbone["rx"] = rx_id
+    data_backbone["csi data"] = csi_data
+
+    data_backbone = pd.Series(data_backbone)
+
+    return data_backbone
+
