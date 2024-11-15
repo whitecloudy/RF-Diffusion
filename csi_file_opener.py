@@ -137,7 +137,6 @@ def read_bfee(bytes_data):
             # imag_part = float(np.int8(tmp_imag))
             imag_part = float(np.array(tmp_imag).astype(np.int8))
 
-
             csi[j // csi_entry.Nrx, j % csi_entry.Nrx, i] = real_part + 1j * imag_part
             index += 16
 
@@ -216,7 +215,7 @@ def read_bf_file(filename):
 def csi_get_all(filename):
     csi_trace = read_bf_file(filename)  # Python 버전의 read_bf_file 함수 필요
     timestamp = np.zeros(len(csi_trace))
-    cfr_array = np.zeros((len(csi_trace), 90), dtype=complex)
+    cfr_array = np.zeros((len(csi_trace), 90), dtype=np.complex64)
 
     for k in range(len(csi_trace)):
         csi_entry = csi_trace[k]  # k번째 패킷
@@ -249,7 +248,7 @@ def csi_file_process(dat_file_dir):
     face_loc_id = int(split_filename[3])
     repetition_num = int(split_filename[4])
     rx_id = int(split_filename[5])
-    csi_data = csi_get_all(dat_file_dir)        
+    csi_data = csi_get_all(dat_file_dir)
 
     data_backbone["date"] = date
     data_backbone["user"] = user
@@ -259,9 +258,6 @@ def csi_file_process(dat_file_dir):
     data_backbone["face"] = face_loc_id
     data_backbone["repetition"] = repetition_num
     data_backbone["rx"] = rx_id
-    data_backbone["csi data"] = csi_data
 
-    data_backbone = pd.Series(data_backbone)
-
-    return data_backbone
+    return data_backbone, csi_data
 
