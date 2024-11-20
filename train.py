@@ -75,6 +75,7 @@ def main(args):
         params.log_dir = args.log_dir
     if args.max_iter is not None:
         params.max_iter = args.max_iter
+    torch.manual_seed(args.random_seed)
     replica_count = device_count()
     if replica_count > 1:
         if params.batch_size % replica_count != 0:
@@ -102,4 +103,5 @@ if __name__ == '__main__':
     parser.add_argument('--max_iter', default=None, type=int,
                         help='maximum number of training iteration')
     parser.add_argument('--batch_size', default=None, type=int)
+    parser.add_argument('--random_seed', default=0, type=int)
     main(parser.parse_args())

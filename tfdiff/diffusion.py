@@ -88,7 +88,7 @@ class SignalDiffusion(nn.Module):
             noise_weight = self.noise_weights[t, :].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, N, 1, 1, 1]
             info_weight = self.info_weights[t, :].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent original info weights, [B, N, 1, 1, 1]
         # random seed
-        torch.manual_seed(11)
+        # torch.manual_seed(11)
         noise =  noise_weight * torch.randn_like(x_0, dtype=torch.float32, device=device) # [B, N, S, A, 2]
         x_t = info_weight * x_0 + noise # [B, N, S, A, 2]
         return x_t
