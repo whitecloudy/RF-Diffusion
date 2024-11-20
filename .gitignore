@@ -1,0 +1,6 @@
+model/*
+fast_diffusion_result/*
+dataset/*
+tfdiff/*
+model/*
+*__pycache__*

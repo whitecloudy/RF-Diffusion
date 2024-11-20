@@ -55,6 +55,8 @@ def train_distributed(replica_id, replica_count, port, params):
         model = tfdiff_mimo(params).to(device)
     elif params.task_id == 3:
         model = tfdiff_eeg(params).to(device)
+    elif params.task_id == 4:
+        model = tfdiff_WiFi(params).to(device)
     else:    
         raise ValueError("Unexpected task_id.")
     model = DistributedDataParallel(model, device_ids=[replica_id])

@@ -186,5 +186,49 @@ params_eeg = AttrDict(
     noise_schedule=np.linspace(5e-4, 0.1, 200).tolist(),
 )
 
+# =======================
+# Widar Parameter Setting.
+# =======================
+params_widar = AttrDict(
+    task_id=4,
+    log_dir='./log/widar',
+    model_dir='./model/widar',
+    data_dir=['../ssddata/widar_preprocess'],
+    out_dir='./dataset/mimo/output',
+    cond_dir=['../ssddata/widar_preprocess'],
+    # Training params
+    max_iter=None, # Unlimited number of iterations.
+    # for inference use
+    batch_size = 8,
+    # batch_size=24,
+    learning_rate=1e-3,
+    max_grad_norm=None,
+    # Inference params
+    inference_batch_size=1,
+    robust_sampling=True,
+    # Data params
+    sample_rate=512,
+    # TransEmbedding
+    input_dim=90,
+    extra_dim=[90],
+    cond_dim= 58,
+    # Model params
+    embed_dim=256,
+    hidden_dim=128,
+    num_heads=8,
+    num_block=32,
+    dropout=0.,
+    mlp_ratio=4,
+    learn_tfdiff=False,
+    # Diffusion params
+    signal_diffusion=True,
+    max_step=200,
+    # variance of the guassian blur applied on the spectrogram on each diffusion step [T]
+    blur_schedule=((0.1**2) * np.ones(200)).tolist(),
+    # \beta_t, noise level added to the signal on each diffusion step [T]
+    noise_schedule=np.linspace(5e-4, 0.1, 200).tolist(),
+)
 
-all_params = [params_wifi, params_fmcw, params_mimo, params_eeg]
+
+
+all_params = [params_wifi, params_fmcw, params_mimo, params_eeg, params_widar]

@@ -14,6 +14,11 @@ class BaseData(object):
             self.n_proc = min(n_proc, cpu_count())
 
 
+def npy_filename_maker(data_label : dict):
+    result = '_'.join(str(value) for value in data_label.values())
+    return result
+
+
 class CsiData_preprocessor(BaseData):
     def __init__(self, dir="../data/widar_dataset/CSI", save_dir="../data/widar_preprocess", n_proc=1, process_chunk_size=128):
         super().__init__()
@@ -72,11 +77,7 @@ class CsiData_preprocessor(BaseData):
                 data_list.append(data_series)
 
         return pd.DataFrame(data_list)
-    
-    @staticmethod
-    def npy_filename_maker(data_label : dict):
-        result = '_'.join(str(value) for value in data_label.values())
-        return result
+
     
     @staticmethod
     def process_single_file_star(args):
@@ -104,28 +105,121 @@ class CsiData_preprocessor(BaseData):
 
         csi, time = csi_data
 
-        npy_filename = CsiData_preprocessor.npy_filename_maker(data_backbone)
+        npy_filename = npy_filename_maker(data_backbone)
 
         out_dir = "/".join((save_dir, npy_filename))
 
         np.save(out_dir+".csi", csi, allow_pickle=False)
         np.save(out_dir+".time", time, allow_pickle=False)
 
-        data_backbone["file dir"] = out_dir
+        data_backbone["file name"] = npy_filename
 
         data_backbone = pd.Series(data_backbone)
         
         return data_backbone
+    
+def fix_labels_file(dir):
+    data_label_df_list = pd.DataFrame(pd.read_pickle(dir+"/labels.pkl"))
+    # data_label_df_list = data_label_df_list.drop(columns=["file dir",])
+    filename_list = []
+    for idx, row in data_label_df_list.iterrows():
+        filename_list.append(npy_filename_maker(row.to_dict()))
+
+    data_label_df_list['file name'] = filename_list
+    # print(data_label_df_list)
+    
+    data_label_df_list.to_pickle(dir+"/labels.pkl")
+    # print(data_label_df_list)
 
 
-class CsiData(BaseData):
-    def __init__(self, n_proc=1, save_dir="../data/widar_preprocess"):
-        super().__init__()
-        self.set_num_processes(n_proc=n_proc)
+class CsiData():
+    def __init__(self, 
+                 save_dir="../data/widar_preprocess", 
+                 live_cond=None):
+        self.save_dir = save_dir
+        self.label_except = ["date", "repetition", "file name"]
+        self.data_label_df = self.load_label_datafile(save_dir)
+        self.cond_label = [label for label in self.data_label_df.drop(self.label_except, axis=1).columns]
+        self.max_value =  self.load_max_value(self.data_label_df)
+        self.min_value =  self.load_min_value(self.data_label_df)
+
+        self.data_label_df = self.data_label_purning(self.data_label_df, live_cond)
+
+    def data_label_purning(self, df, live_cond):
+        if live_cond is None:
+            return
+        
+        for col in live_cond:
+            trueorfalse = df[col].isin(live_cond[col])
+            df = df.loc[trueorfalse]
+        
+        return df
+
+    def load_max_value(self, df):
+        max_list = {}
+        for label in self.cond_label:
+            max_list[label] = max(df[label])
+
+        return pd.Series(max_list)
+    
+    def load_min_value(self, df):
+        min_list = {}
+        for label in self.cond_label:
+            min_list[label] = min(df[label])
+
+        return pd.Series(min_list)
+
+    def load_label_datafile(self, save_dir) -> pd.DataFrame:
+        data_label_df_list = pd.read_pickle(save_dir+"/labels.pkl")
+        return data_label_df_list
+    
+    def condition_maker(self, label : pd.Series):
+        cond_list = []
+        for key in self.cond_label:
+            value = label[key] - self.min_value[key]
+            value_range = self.max_value[key] - self.min_value[key] + 1
+            cond_frac = np.zeros((value_range))
+            cond_frac[value] = 1
+
+            cond_list.append(cond_frac)
+
+        return np.concatenate(cond_list)
+
+    @staticmethod
+    def csi_data_loader(data_dir : str) -> np.ndarray:
+        return np.load(data_dir+".csi.npy", allow_pickle=False)
+    
+    @staticmethod
+    def time_data_loader(data_dir : str) -> np.ndarray:
+        return np.load(data_dir+".time.npy", allow_pickle=False)
+    
+    def __len__(self):
+        return len(self.data_label_df)
+    
+    def __getitem__(self, idx):
+        data_labels = self.data_label_df.iloc[idx]
+        dir = "/".join([self.save_dir, data_labels['file name']])
+        condition = self.condition_maker(data_labels)
+        csi_data = CsiData.csi_data_loader(dir)
+        time_data = CsiData.time_data_loader(dir)
+        return condition, csi_data, time_data
 
 
 if __name__=="__main__":
-    my_data = CsiData_preprocessor(n_proc=92, process_chunk_size=4096)
+    # my_data = CsiData_preprocessor(n_proc=92, process_chunk_size=4096)
+
+    live_data = {'date' : [20181109, 20181115, 20181117, 20181118]}
+    # live_data = {'date' : [20181208,]}
+
+    mydata = CsiData(save_dir="../ssddata/widar_preprocess", live_cond=live_data)
+
+    print(mydata.data_label_df)
+    print(len(mydata))
+
+    # for data in mydata:
+    #     print(data)
+
+    # fix_labels_file("../data/widar_preprocess")
 
     # my_data.data_df.to_pickle("../data/result.zip", compression="zip")
     # dir="../data/widar_dataset/CSI"

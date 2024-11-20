@@ -102,7 +102,26 @@ class EEGDataset(torch.utils.data.Dataset):
   def __getitem__(self,idx):
     dataset = scio.loadmat(self.filenames[idx])
     data = torch.from_numpy(dataset['clean']).to(torch.complex64)
-    cond = torch.from_numpy(dataset['disturb']).to(torch.complex64)
+    cond = torch.from_numpy(dataset['disturb'].astype(np.int16)).to(torch.complex64)
+    return {
+        'data': data,
+        'cond': cond
+    }
+  
+class WidarDataset(torch.utils.data.Dataset):
+  def __init__(self, paths, live_cond):
+    from data import CsiData
+    super().__init__()
+
+    self.my_data = CsiData(save_dir = paths[0], live_cond=live_cond)
+
+  def __len__(self):
+    return len(self.my_data)
+
+  def __getitem__(self,idx):
+    cond, data, time = self.my_data[idx]
+    data = torch.from_numpy(data).to(torch.complex64)
+    cond = torch.from_numpy(cond).to(torch.complex64)
     return {
         'data': data,
         'cond': cond
@@ -171,7 +190,7 @@ class Collator:
             } 
 
         ## EEG Case
-        if task_id == 3:
+        elif task_id == 3:
             for record in minibatch:
                 data = record['data']
                 cond = record['cond']
@@ -187,6 +206,24 @@ class Collator:
                 'data': torch.view_as_real(data),
                 'cond': torch.view_as_real(cond),
             } 
+        ## Widar Case
+        elif task_id == 4:
+            for record in minibatch:
+                # Filter out records that aren't long enough.
+                if len(record['data']) < sample_rate:
+                    del record['data']
+                    del record['cond']
+                    continue
+                data = torch.view_as_real(record['data']).permute(1, 2, 0)
+                down_sample = F.interpolate(data, sample_rate, mode='nearest-exact')
+                norm_data = (down_sample - down_sample.mean()) / down_sample.std()
+                record['data'] = norm_data.permute(2, 0, 1)
+            data = torch.stack([record['data'] for record in minibatch if 'data' in record])
+            cond = torch.stack([record['cond'] for record in minibatch if 'cond' in record])
+            return {
+                'data': data,
+                'cond': torch.view_as_real(cond),
+            }
 
         else:
             raise ValueError("Unexpected task_id.")
@@ -203,6 +240,8 @@ def from_path(params, is_distributed=False):
         dataset = MIMODataset(data_dir)
     elif task_id == 3:
         dataset = EEGDataset(data_dir)
+    elif task_id == 4:
+        dataset = WidarDataset(data_dir, {'date' : [20181109, 20181115, 20181117, 20181118]})
     else:
         raise ValueError("Unexpected task_id.")
     return torch.utils.data.DataLoader(
@@ -228,6 +267,8 @@ def from_path_inference(params):
         dataset = MIMODataset(cond_dir)
     elif task_id == 3:
         dataset = EEGDataset(cond_dir)
+    elif task_id == 4:
+        dataset = WidarDataset(cond_dir, {'date' : [20181208,]})
     else:
         raise ValueError("Unexpected task_id.")
     return torch.utils.data.DataLoader(
