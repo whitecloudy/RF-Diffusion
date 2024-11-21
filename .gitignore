@@ -4,3 +4,4 @@ dataset/*
 tfdiff/*
 model/*
 *__pycache__*
+log/*
