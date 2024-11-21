@@ -54,6 +54,23 @@ class tfdiffLearner:
         self.is_master = True
         self.loss_fn = nn.MSELoss()
         self.summary_writer = None
+        self.summary_val_writer = None
+        self.step_or_jump = 'jump'
+
+    def target_degrade_data(self, data, t):
+        if self.step_or_jump == 'step':
+            degrade_data_t_minus_1 = self.diffusion.degrade_fn(
+                data, t-1 ,self.task_id)  # degrade data, x_t-1, [B, N, S*A, 2]
+            degrade_data = self.diffusion.degrade_step(
+                degrade_data_t_minus_1, t ,self.task_id)    # degrade data, x_t, [B, N, S*A, 2]
+            
+            return degrade_data_t_minus_1, degrade_data
+        elif self.step_or_jump == 'jump':
+            degrade_data = self.diffusion.degrade_fn(
+                data, t ,self.task_id)  # degrade data, x_t, [B, N, S*A, 2]
+            return data, degrade_data
+
+
 
     def state_dict(self):
         if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
@@ -125,12 +142,11 @@ class tfdiffLearner:
         B = data.shape[0]
         # random diffusion step, [B]
         t = torch.randint(0, self.diffusion.max_step, [B], dtype=torch.int64)
-        degrade_data = self.diffusion.degrade_fn(
-            data, t ,self.task_id)  # degrade data, x_t, [B, N, S*A, 2]
+        target_data, degrade_data = self.target_degrade_data(data, t)
         predicted = self.model(degrade_data, t, cond)
         if self.task_id==3:
-            data = data.reshape(-1,512,1,2)
-        loss = self.loss_fn(data, predicted)
+            target_data = target_data.reshape(-1,512,1,2)
+        loss = self.loss_fn(target_data, predicted)
         loss.backward()
         self.grad_norm = nn.utils.clip_grad_norm_(
             self.model.parameters(), self.params.max_grad_norm or 1e9)

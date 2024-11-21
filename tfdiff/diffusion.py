@@ -11,8 +11,8 @@ class SignalDiffusion(nn.Module):
         self.input_dim = self.params.sample_rate # input time-series data length, N
         self.extra_dim = self.params.extra_dim # dimension of each data sample, e.g., [S A 2] for complex-valued CSI
         self.max_step = self.params.max_step # maximum diffusion steps
-        beta = np.array(self.params.noise_schedule) # \beta, [T]
-        self.alpha = torch.tensor((1-beta).astype(np.float32)) # \alpha_t [T]
+        self.beta = np.array(self.params.noise_schedule) # \beta, [T]
+        self.alpha = torch.tensor((1-self.beta).astype(np.float32)) # \alpha_t [T]
         self.alpha_bar = torch.cumprod(self.alpha, dim=0) # \bar{\alpha_t}, [T]
         self.var_blur = torch.tensor(np.array(self.params.blur_schedule).astype(np.float32)) # var of blur kernels on the frequency domain for each diffusion step
         self.var_blur_bar = torch.cumsum(self.var_blur, dim=0) # var of blur kernels on the frequency domain, [T]
@@ -21,6 +21,7 @@ class SignalDiffusion(nn.Module):
         self.gaussian_kernel = self.get_kernel(self.var_kernel) # G_t, [T, N]
         self.gaussian_kernel_bar = self.get_kernel(self.var_kernel_bar) # \bar{G_t}, [T, N]
         # The weight of original information x_0 in degraded data x_t
+        self.info_weights_unbar = self.gaussian_kernel * torch.sqrt(self.alpha).unsqueeze(-1) # [T, N]
         self.info_weights = self.gaussian_kernel_bar * torch.sqrt(self.alpha_bar).unsqueeze(-1) # [T, N]
         # The overall weight of gaussian noise \epsilon in degraded data x_t
         self.noise_weights = self.get_noise_weights() # [T, N]
@@ -78,6 +79,22 @@ class SignalDiffusion(nn.Module):
             rev_kernel_bar = torch.cumprod(rev_kernel, dim=0) / rev_kernel[-1, :] # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
             noise_weights.append(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt)) # [t, N]
         return torch.stack(noise_weights, dim=0) # [T, N] 
+    
+
+    def degrade_step(self, x_t_minux_1, t, task_id):
+        device = x_t_minux_1.device
+        if task_id in [0, 1, 4]:
+            noise_weight = self.beta[t, :].unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, N, 1, 1, 1]
+            info_weight = self.info_weights_unbar[t, :].unsqueeze(-1).unsqueeze(-1).to(device) # equivalent original info weights, [B, N, 1, 1, 1]
+        if task_id in [2, 3]:
+            noise_weight = self.beta[t, :].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, N, 1, 1, 1]
+            info_weight = self.info_weights_unbar[t, :].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent original info weights, [B, N, 1, 1, 1]
+        # random seed
+        # torch.manual_seed(11)
+        noise =  noise_weight * torch.randn_like(x_t_minux_1, dtype=torch.float32, device=device) # [B, N, S, A, 2]
+        x_t = info_weight * x_t_minux_1 + noise # [B, N, S, A, 2]
+        return x_t
+
 
     def degrade_fn(self, x_0, t, task_id):
         device = x_0.device
