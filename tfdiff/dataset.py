@@ -4,6 +4,8 @@ import random
 import torch
 import torch.nn.functional as F
 import scipy.io as scio
+import torch.utils
+import torch.utils.data
 from tfdiff.params import AttrDict
 from glob import glob
 from torch.utils.data.distributed import DistributedSampler
@@ -244,16 +246,37 @@ def from_path(params, is_distributed=False):
         dataset = WidarDataset(data_dir, {'date' : [20181109, 20181115, 20181117, 20181118]})
     else:
         raise ValueError("Unexpected task_id.")
-    return torch.utils.data.DataLoader(
-        dataset,
+
+    total_len = len(dataset)
+    train_len = int(total_len*0.8)
+    val_len = total_len-train_len
+    
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_len, val_len])
+
+    # only for testing purpose
+    # train_dataset, val_dataset, dummy = torch.utils.data.random_split(dataset, [128, 16, total_len-128-16])
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
         batch_size=params.batch_size,
         collate_fn=Collator(params).collate,
         shuffle=not is_distributed,
         num_workers=8,
-        sampler=DistributedSampler(dataset) if is_distributed else None,
+        sampler=DistributedSampler(train_dataset) if is_distributed else None,
         pin_memory=True,
         drop_last=True,
         persistent_workers=True)
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=params.batch_size,
+        collate_fn=Collator(params).collate,
+        shuffle=not is_distributed,
+        num_workers=8,
+        sampler=DistributedSampler(val_dataset) if is_distributed else None,
+        pin_memory=True,
+        drop_last=True,
+        persistent_workers=True)
+    return train_loader, val_loader
 
 
 def from_path_inference(params):

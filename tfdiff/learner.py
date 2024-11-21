@@ -6,6 +6,8 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from tfdiff.diffusion import SignalDiffusion, GaussianDiffusion
 from tfdiff.dataset import _nested_map
+import torch.distributed as dist
+
 
 
 class tfdiffLoss(nn.Module):
@@ -28,13 +30,14 @@ class tfdiffLoss(nn.Module):
         
 
 class tfdiffLearner:
-    def __init__(self, log_dir, model_dir, model, dataset, optimizer, params, *args, **kwargs):
+    def __init__(self, log_dir, model_dir, model, dataset, val_dataset, optimizer, params, *args, **kwargs):
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
         self.task_id = params.task_id
         self.log_dir = log_dir
         self.model = model
         self.dataset = dataset
+        self.val_dataset = val_dataset
         self.optimizer = optimizer
         self.device = model.device
         self.diffusion = SignalDiffusion(params) if params.signal_diffusion else GaussianDiffusion(params)
@@ -51,6 +54,7 @@ class tfdiffLearner:
             self.optimizer, 1, gamma=0.5)
         self.params = params
         self.iter = 0
+        self.proc_id = None
         self.is_master = True
         self.loss_fn = nn.MSELoss()
         self.summary_writer = None
@@ -116,6 +120,9 @@ class tfdiffLearner:
         device = next(self.model.parameters()).device
         # self.prof.start()
         while True:  # epoch
+            self.validation(device)
+            
+            self.model.train()
             for features in tqdm(self.dataset, desc=f'Epoch {self.iter // len(self.dataset)}') if self.is_master else self.dataset:
                 if max_iter is not None and self.iter >= max_iter:
                     # self.prof.stop()
@@ -134,6 +141,48 @@ class tfdiffLearner:
                 # self.prof.step()
                 self.iter += 1
             self.lr_scheduler.step()
+
+    def validation(self, device):
+        with torch.no_grad():
+            self.model.eval()
+            if self.is_master:
+                loss_data = []
+
+            for features in tqdm(self.val_dataset, desc=f'Validate {(self.iter-1) // len(self.dataset)}') if self.is_master else self.val_dataset:
+                features = _nested_map(features, lambda x: x.to(
+                    device) if isinstance(x, torch.Tensor) else x)
+                loss = self.validation_iter(features)
+                if torch.isnan(loss).any():
+                    raise RuntimeError(
+                        f'Detected NaN loss at iteration {self.iter}.')
+                loss = loss.mean()
+                
+                if self.is_master:
+                    global_loss = [torch.zeros_like(loss) for _ in range(dist.get_world_size())]
+                    dist.gather(loss, global_loss)
+                    global_loss = torch.tensor(global_loss).mean()
+                    loss_data.append(global_loss)
+                else:
+                    dist.gather(loss)
+            if self.is_master:
+                self._write_val_summary(self.iter, torch.tensor(loss_data).mean())
+
+    def validation_iter(self, features):
+        self.optimizer.zero_grad()
+        data = features['data']  # orignial data, x_0, [B, N, S*A, 2]
+        cond = features['cond']  # cond, c, [B, C]
+        B = data.shape[0]
+        # random diffusion step, [B]
+        t = torch.randint(0, self.diffusion.max_step, [B], dtype=torch.int64)
+        target_data, degrade_data = self.target_degrade_data(data, t)
+        # degrade_data = self.diffusion.degrade_fn(
+        #     data, t ,self.task_id)  # degrade data, tx_, [B, N, S*A, 2]
+        predicted = self.model(degrade_data, t, cond)
+        if self.task_id==3:
+            target_data = target_data.reshape(-1,512,1,2)
+        loss = self.loss_fn(target_data, predicted)
+        return loss
+
 
     def train_iter(self, features):
         self.optimizer.zero_grad()
@@ -157,7 +206,19 @@ class tfdiffLearner:
         writer = self.summary_writer or SummaryWriter(self.log_dir, purge_step=iter)
         # writer.add_scalars('feature/csi', features['csi'][0].abs(), step)
         # writer.add_image('feature/stft', features['stft'][0].abs(), step)
-        writer.add_scalar('train/loss', loss, iter)
+        writer.add_scalars('loss', {'train': loss}, iter)
         writer.add_scalar('train/grad_norm', self.grad_norm, iter)
         writer.flush()
         self.summary_writer = writer
+
+    def _write_val_summary(self, iter, loss):
+        # writer = self.summary_val_writer or SummaryWriter(self.log_dir+"/validation", purge_step=iter)
+        writer = self.summary_writer or SummaryWriter(self.log_dir, purge_step=iter)
+
+        # writer.add_scalars('feature/csi', features['csi'][0].abs(), step)
+        # writer.add_image('feature/stft', features['stft'][0].abs(), step)
+        writer.add_scalars('loss', {'validation': loss}, iter)
+        writer.flush()
+        # self.summary_val_writer = writer
+        self.summary_writer = writer
+

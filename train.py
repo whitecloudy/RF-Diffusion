@@ -5,7 +5,7 @@ from torch.cuda import device_count
 from torch.multiprocessing import spawn
 from torch.nn.parallel import DistributedDataParallel
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, BooleanOptionalAction
 
 from tfdiff.params import all_params
 from tfdiff.learner import tfdiffLearner
@@ -14,29 +14,37 @@ from tfdiff.mimo_model import tfdiff_mimo
 from tfdiff.eeg_model import tfdiff_eeg
 from tfdiff.fmcw_model import tfdiff_fmcw
 from tfdiff.dataset import from_path
+import torch.distributed as dist
 
 def _get_free_port():
     import socketserver
     with socketserver.TCPServer(('localhost', 0), None) as s:
         return s.server_address[1]
 
-def _train_impl(replica_id, model, dataset, params):
+def _train_impl(replica_id, model, train_dataset, val_dataset, params):
     opt = torch.optim.AdamW(model.parameters(), lr=params.learning_rate)
-    learner = tfdiffLearner(params.log_dir, params.model_dir, model, dataset, opt, params)
-    learner.is_master = (replica_id == 0)
-    learner.restore_from_checkpoint()
+    learner = tfdiffLearner(params.log_dir, params.model_dir, model, train_dataset, val_dataset, opt, params)
+    learner.proc_id = dist.get_rank()
+    learner.is_master = (learner.proc_id == 0)
+    if not params.from_start:
+        learner.restore_from_checkpoint()
+    else:
+        if learner.is_master:
+            if os.path.exists(params.log_dir):
+                import shutil
+                shutil.rmtree(params.log_dir)
     learner.train(max_iter=params.max_iter)
 
 
 def train(params):
-    dataset = from_path(params)
+    train_dataset, val_dataset = from_path(params)
     if params.task_id==0:
         model = tfdiff_eeg(params).cuda()
     elif params.task_id==1:
         model = tfdiff_mimo(params).cuda()
     else:    
         model = tfdiff_WiFi(params).cuda()
-    _train_impl(0, model, dataset, params)
+    _train_impl(0, model, train_dataset, val_dataset, params)
 
 
 def train_distributed(replica_id, replica_count, port, params):
@@ -44,7 +52,7 @@ def train_distributed(replica_id, replica_count, port, params):
     os.environ['MASTER_PORT'] = str(port)
     torch.distributed.init_process_group(
         'nccl', rank=replica_id, world_size=replica_count)
-    dataset = from_path(params, is_distributed=True)
+    train_dataset, val_dataset = from_path(params, is_distributed=True)
     device = torch.device('cuda', replica_id)
     torch.cuda.set_device(device)
     if params.task_id == 0:
@@ -60,7 +68,7 @@ def train_distributed(replica_id, replica_count, port, params):
     else:    
         raise ValueError("Unexpected task_id.")
     model = DistributedDataParallel(model, device_ids=[replica_id])
-    _train_impl(replica_id, model, dataset, params)
+    _train_impl(replica_id, model, train_dataset, val_dataset, params)
 
 
 def main(args):
@@ -75,6 +83,10 @@ def main(args):
         params.log_dir = args.log_dir
     if args.max_iter is not None:
         params.max_iter = args.max_iter
+    if args.from_start is not None:
+        params.from_start = args.from_start
+    if args.random_seed is not None:
+        params.random_seed = args.random_seed
     torch.manual_seed(args.random_seed)
     replica_count = device_count()
     if replica_count > 1:
@@ -104,4 +116,5 @@ if __name__ == '__main__':
                         help='maximum number of training iteration')
     parser.add_argument('--batch_size', default=None, type=int)
     parser.add_argument('--random_seed', default=0, type=int)
+    parser.add_argument('--from_start', default=False, action=BooleanOptionalAction)
     main(parser.parse_args())
