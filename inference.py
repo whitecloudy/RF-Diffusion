@@ -278,7 +278,7 @@ def main(args):
         checkpoint = torch.load(f'{model_dir}/weights.pt')
     else:
         checkpoint = torch.load(model_dir)
-    if args.task_id==0:
+    if args.task_id==0 or args.task_id==4:
         model = tfdiff_WiFi(AttrDict(params)).to(device)
     elif args.task_id==1:
         model = tfdiff_fmcw(AttrDict(params)).to(device)
@@ -286,6 +286,7 @@ def main(args):
         model = tfdiff_mimo(AttrDict(params)).to(device)
     elif args.task_id==3:
         model = tfdiff_eeg(AttrDict(params)).to(device)
+    
     model.load_state_dict(checkpoint['model'])
     model.eval()
     model.params.override(params)
@@ -306,7 +307,7 @@ def main(args):
             data = features['data']
             cond = features['cond']
             
-            if args.task_id in [0, 1]:
+            if args.task_id in [0, 1, 4]:
                 # pred = diffusion.sampling(model, cond, device)
                 # pred = diffusion.robust_sampling(model, cond, device)
                 # pred = diffusion.fast_sampling(model, cond, device)
@@ -320,9 +321,11 @@ def main(args):
                     # Save the SSIM.
                     ssim_list.append(cur_ssim.item())
                     
-                    if args.task_id:
+                    if args.task_id == 1:
                         save_fmcw(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
-                    else:
+                    elif args.task_id == 0:
+                        save_wifi(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
+                    elif args.task_id == 4:
                         save_wifi(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
                 cur_batch += 1
             if args.task_id in [2, 3]:
@@ -343,7 +346,7 @@ def main(args):
                     snr_list.append(cal_SNR_MIMO(pred,data))
                     save_mimo(out_dir, data.cpu().detach(), pred.cpu().detach(), cond.cpu().detach(), cur_batch)
                 cur_batch += 1
-        if args.task_id in [0,1]:
+        if args.task_id in [0,1,4]:
             print_fid(fid_pred_dir,fid_data_dir,args.task_id)
             print(f'Average SSIM: {np.mean(ssim_list)}')
         if args.task_id in [2, 3]:
