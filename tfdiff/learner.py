@@ -59,17 +59,17 @@ class tfdiffLearner:
         self.loss_fn = nn.MSELoss()
         self.summary_writer = None
         self.summary_val_writer = None
-        self.step_or_jump = 'jump'
+        self.jump_or_step = params.jump_or_step
 
     def target_degrade_data(self, data, t):
-        if self.step_or_jump == 'step':
+        if self.jump_or_step == 'step':
             degrade_data_t_minus_1 = self.diffusion.degrade_fn(
                 data, t-1 ,self.task_id)  # degrade data, x_t-1, [B, N, S*A, 2]
             degrade_data = self.diffusion.degrade_step(
                 degrade_data_t_minus_1, t ,self.task_id)    # degrade data, x_t, [B, N, S*A, 2]
             
             return degrade_data_t_minus_1, degrade_data
-        elif self.step_or_jump == 'jump':
+        elif self.jump_or_step == 'jump':
             degrade_data = self.diffusion.degrade_fn(
                 data, t ,self.task_id)  # degrade data, x_t, [B, N, S*A, 2]
             return data, degrade_data

@@ -71,6 +71,13 @@ def train_distributed(replica_id, replica_count, port, params):
     _train_impl(replica_id, model, train_dataset, val_dataset, params)
 
 
+def log_dir_suffix_name_maker(params):
+    name_list = []
+    name_list.append(params.random_seed)
+    name_list.append(params.jump_or_step)
+    return '/'+('-'.join([str(name) for name in name_list]))
+
+
 def main(args):
     params = all_params[args.task_id]
     if args.batch_size is not None:
@@ -87,6 +94,12 @@ def main(args):
         params.from_start = args.from_start
     if args.random_seed is not None:
         params.random_seed = args.random_seed
+    if args.jump_or_step is not None:
+        params.jump_or_step = args.jump_or_step
+
+    params.log_dir += log_dir_suffix_name_maker(params)
+    params.model_dir += log_dir_suffix_name_maker(params)
+    
     torch.manual_seed(args.random_seed)
     replica_count = device_count()
     if replica_count > 1:
@@ -116,5 +129,6 @@ if __name__ == '__main__':
                         help='maximum number of training iteration')
     parser.add_argument('--batch_size', default=None, type=int)
     parser.add_argument('--random_seed', default=0, type=int)
+    parser.add_argument('--jump_or_step', default='jump', type=str)
     parser.add_argument('--from_start', default=False, action=BooleanOptionalAction)
     main(parser.parse_args())
