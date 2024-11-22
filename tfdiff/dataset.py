@@ -254,7 +254,7 @@ def from_path(params, is_distributed=False):
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_len, val_len])
 
     # only for testing purpose
-    # train_dataset, val_dataset, dummy = torch.utils.data.random_split(dataset, [128, 16, total_len-128-16])
+    # train_dataset, val_dataset, dummy = torch.utils.data.random_split(dataset, [32, 16, total_len-32-16])
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,

@@ -107,6 +107,20 @@ class tfdiffLearner:
                 os.unlink(link_name)
             os.symlink(save_basename, link_name)
 
+    def save_to_bestpoint(self, filename='weights'):
+        save_basename = f'{filename}-{self.iter}.pt'
+        save_name = f'{self.model_dir}/{save_basename}'
+        link_name = f'{self.model_dir}/best_{filename}.pt'
+        if os.name == 'nt':
+            torch.save(self.state_dict(), link_name)
+        else:
+            if os.path.isfile(save_name):
+                if os.path.islink(link_name):
+                    os.unlink(link_name)
+                os.symlink(save_basename, link_name)
+            else:
+                print("Counldn't find ", save_basename)
+
     def restore_from_checkpoint(self, filename='weights'):
         try:
             checkpoint = torch.load(f'{self.model_dir}/{filename}.pt')
@@ -126,20 +140,21 @@ class tfdiffLearner:
             if (epochs is not None) and (epochs >= max_epochs):
                 print("max epochs init")
                 return
-
             val_loss = self.validation(device)
             if val_loss < min_loss:
                 min_loss = val_loss
                 early_count = 0
+                if self.is_master:
+                    self.save_to_bestpoint()
             else:
                 early_count += 1
-
             if (self.early_stop is not None) and (early_count >= self.early_stop):
                 print("early stop init")
                 return
             
             # We are not stopping here. Keep training        
             for features in tqdm(self.dataset, desc=f'Epoch {self.iter // len(self.dataset)}') if self.is_master else self.dataset:
+                self.iter += 1
                 if max_iter is not None and self.iter >= max_iter:
                     # self.prof.stop()
                     return
@@ -155,7 +170,7 @@ class tfdiffLearner:
                     if self.iter % (len(self.dataset)) == 0:
                         self.save_to_checkpoint()
                 # self.prof.step()
-                self.iter += 1
+
             self.lr_scheduler.step()
             epochs += 1
 
