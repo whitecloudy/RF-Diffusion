@@ -198,6 +198,7 @@ params_widar = AttrDict(
     cond_dir=['../ssddata/widar_preprocess'],
     # Training params
     max_iter=None, # Unlimited number of iterations.
+    early_stop=None,
     # for inference use
     batch_size = 8,
     # batch_size=24,

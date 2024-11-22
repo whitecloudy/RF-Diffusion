@@ -34,6 +34,7 @@ class tfdiffLearner:
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
         self.task_id = params.task_id
+        self.early_stop = params.early_stop
         self.log_dir = log_dir
         self.model = model
         self.dataset = dataset
@@ -73,8 +74,6 @@ class tfdiffLearner:
             degrade_data = self.diffusion.degrade_fn(
                 data, t ,self.task_id)  # degrade data, x_t, [B, N, S*A, 2]
             return data, degrade_data
-
-
 
     def state_dict(self):
         if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
@@ -116,13 +115,30 @@ class tfdiffLearner:
         except FileNotFoundError:
             return False
 
-    def train(self, max_iter=None):
+    def train(self, max_iter=None, max_epochs=None):
         device = next(self.model.parameters()).device
         # self.prof.start()
+        epochs = 0
+        min_loss = float(9999.9)
+        early_count = 0
         while True:  # epoch
-            self.validation(device)
+            # Are we stop here?
+            if (epochs is not None) and (epochs >= max_epochs):
+                print("max epochs init")
+                return
+
+            val_loss = self.validation(device)
+            if val_loss < min_loss:
+                min_loss = val_loss
+                early_count = 0
+            else:
+                early_count += 1
+
+            if (self.early_stop is not None) and (early_count >= self.early_stop):
+                print("early stop init")
+                return
             
-            self.model.train()
+            # We are not stopping here. Keep training        
             for features in tqdm(self.dataset, desc=f'Epoch {self.iter // len(self.dataset)}') if self.is_master else self.dataset:
                 if max_iter is not None and self.iter >= max_iter:
                     # self.prof.stop()
@@ -141,12 +157,12 @@ class tfdiffLearner:
                 # self.prof.step()
                 self.iter += 1
             self.lr_scheduler.step()
+            epochs += 1
 
     def validation(self, device):
         with torch.no_grad():
             self.model.eval()
-            if self.is_master:
-                loss_data = []
+            loss_data = []
 
             for features in tqdm(self.val_dataset, desc=f'Validate {(self.iter-1) // len(self.dataset)}') if self.is_master else self.val_dataset:
                 features = _nested_map(features, lambda x: x.to(
@@ -157,15 +173,18 @@ class tfdiffLearner:
                         f'Detected NaN loss at iteration {self.iter}.')
                 loss = loss.mean()
                 
-                if self.is_master:
-                    global_loss = [torch.zeros_like(loss) for _ in range(dist.get_world_size())]
-                    dist.gather(loss, global_loss)
-                    global_loss = torch.tensor(global_loss).mean()
-                    loss_data.append(global_loss)
-                else:
-                    dist.gather(loss)
+                global_loss = [torch.zeros_like(loss) for _ in range(dist.get_world_size())]
+                dist.all_gather(global_loss, loss)
+                global_loss = torch.tensor(global_loss).to(device).mean()
+                loss_data.append(global_loss)
+            self.model.train()
+            loss_mean = torch.tensor(loss_data).mean()
+
             if self.is_master:
-                self._write_val_summary(self.iter, torch.tensor(loss_data).mean())
+                self._write_val_summary(self.iter, loss_mean)
+
+            return loss_mean.cpu().item()
+
 
     def validation_iter(self, features):
         self.optimizer.zero_grad()
@@ -206,7 +225,7 @@ class tfdiffLearner:
         writer = self.summary_writer or SummaryWriter(self.log_dir, purge_step=iter)
         # writer.add_scalars('feature/csi', features['csi'][0].abs(), step)
         # writer.add_image('feature/stft', features['stft'][0].abs(), step)
-        writer.add_scalars('loss', {'train': loss}, iter)
+        writer.add_scalar('train/loss', loss, iter)
         writer.add_scalar('train/grad_norm', self.grad_norm, iter)
         writer.flush()
         self.summary_writer = writer
@@ -214,10 +233,9 @@ class tfdiffLearner:
     def _write_val_summary(self, iter, loss):
         # writer = self.summary_val_writer or SummaryWriter(self.log_dir+"/validation", purge_step=iter)
         writer = self.summary_writer or SummaryWriter(self.log_dir, purge_step=iter)
-
         # writer.add_scalars('feature/csi', features['csi'][0].abs(), step)
         # writer.add_image('feature/stft', features['stft'][0].abs(), step)
-        writer.add_scalars('loss', {'validation': loss}, iter)
+        writer.add_scalar('validation/loss', loss, iter)
         writer.flush()
         # self.summary_val_writer = writer
         self.summary_writer = writer

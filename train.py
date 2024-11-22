@@ -33,7 +33,7 @@ def _train_impl(replica_id, model, train_dataset, val_dataset, params):
             if os.path.exists(params.log_dir):
                 import shutil
                 shutil.rmtree(params.log_dir)
-    learner.train(max_iter=params.max_iter)
+    learner.train(max_iter=params.max_iter, max_epochs=params.max_epochs)
 
 
 def train(params):
@@ -88,6 +88,9 @@ def main(args):
         params.data_dir = args.data_dir
     if args.log_dir is not None:
         params.log_dir = args.log_dir
+    params.max_epochs = args.max_epochs
+    if args.early_stop is not None:
+        params.early_stop = args.early_stop
     if args.max_iter is not None:
         params.max_iter = args.max_iter
     if args.from_start is not None:
@@ -127,6 +130,10 @@ if __name__ == '__main__':
     parser.add_argument('--log_dir', default=None)
     parser.add_argument('--max_iter', default=None, type=int,
                         help='maximum number of training iteration')
+    parser.add_argument('--max_epochs', default=None, type=int,
+                    help='maximum number of training epochs')
+    parser.add_argument('--early_stop', default=None, type=int,
+                    help='early stopping epoch step')
     parser.add_argument('--batch_size', default=None, type=int)
     parser.add_argument('--random_seed', default=0, type=int)
     parser.add_argument('--jump_or_step', default='jump', type=str)
