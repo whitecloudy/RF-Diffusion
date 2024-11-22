@@ -193,9 +193,9 @@ params_widar = AttrDict(
     task_id=4,
     log_dir='./log/widar',
     model_dir='./model/widar',
-    data_dir=['../ssddata/widar_preprocess'],
+    data_dir=['../data/widar_preprocess'],
     out_dir='./dataset/mimo/output',
-    cond_dir=['../ssddata/widar_preprocess'],
+    cond_dir=['../data/widar_preprocess'],
     # Training params
     max_iter=None, # Unlimited number of iterations.
     early_stop=None,
@@ -212,7 +212,7 @@ params_widar = AttrDict(
     # TransEmbedding
     input_dim=90,
     extra_dim=[90],
-    cond_dim= 58,
+    cond_dim= 61,
     # Model params
     embed_dim=256,
     hidden_dim=128,

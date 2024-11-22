@@ -137,13 +137,36 @@ class CsiData():
                  save_dir="../data/widar_preprocess", 
                  live_cond=None):
         self.save_dir = save_dir
+        
         self.label_except = ["date", "repetition", "file name"]
         self.data_label_df = self.load_label_datafile(save_dir)
+        self.add_room_number()
+
         self.cond_label = [label for label in self.data_label_df.drop(self.label_except, axis=1).columns]
         self.max_value =  self.load_max_value(self.data_label_df)
         self.min_value =  self.load_min_value(self.data_label_df)
 
         self.data_label_df = self.data_label_purning(self.data_label_df, live_cond)
+
+    def add_room_number(self):
+        data_room_matching = {
+            20181109: 1,
+            20181112: 1,
+            20181115: 1,
+            20181116: 1,
+            20181117: 2,
+            20181118: 2,
+            20181121: 1,
+            20181127: 2,
+            20181128: 2,
+            20181130: 1,
+            20181204: 2,
+            20181205: 2,
+            20181208: 2,
+            20181209: 2,
+            20181211: 3
+        }
+        self.data_label_df["room"] = [data_room_matching[date] for date in self.data_label_df["date"]]
 
     def data_label_purning(self, df, live_cond):
         if live_cond is None:
@@ -208,12 +231,13 @@ class CsiData():
 if __name__=="__main__":
     # my_data = CsiData_preprocessor(n_proc=92, process_chunk_size=4096)
 
-    live_data = {'date' : [20181109, 20181115, 20181117, 20181118]}
+    live_data = {'date' : [20181109, 20181115, 20181117, 20181211]}
     # live_data = {'date' : [20181208,]}
+
 
     mydata = CsiData(save_dir="../ssddata/widar_preprocess", live_cond=live_data)
 
-    print(mydata.data_label_df)
+    print(mydata.cond_label)
     print(len(mydata))
 
     # for data in mydata:
