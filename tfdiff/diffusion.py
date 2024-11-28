@@ -28,24 +28,29 @@ class SignalDiffusion(nn.Module):
       
     def get_kernel(self, var_kernel):
         samples = torch.arange(0, self.input_dim) # [N]
-        gaussian_kernel = torch.exp(-((samples - self.input_dim // 2)**2) / (2 * var_kernel)) / torch.sqrt(2 * torch.pi * var_kernel) # G_t, [T, N]
-        gaussian_kernel = self.input_dim * gaussian_kernel / torch.sum(gaussian_kernel, dim=1, keepdim=True) # Normalized G_t, [T, N]
+        gaussian_kernel = torch.exp(-((samples - self.input_dim // 2)**2) / (2 * var_kernel))
+        # gaussian_kernel = torch.exp(-((samples - self.input_dim // 2)**2) / (2 * var_kernel)) / torch.sqrt(2 * torch.pi * var_kernel) # G_t, [T, N]
+        # gaussian_kernel = self.input_dim * gaussian_kernel / torch.sum(gaussian_kernel, dim=1, keepdim=True) # Normalized G_t, [T, N]
         return gaussian_kernel
 
     def get_noise_weights(self):
         noise_weights = []
         for t in range(self.max_step):
             upper_bound = t + 1
-            one_minus_alpha_sqrt = torch.sqrt(1 - self.alpha[0:upper_bound]) # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
+            # one_minus_alpha_sqrt = torch.sqrt(1 - self.alpha[0:upper_bound]) # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
+            one_minus_alpha_sqrt = 1 - self.alpha[0:upper_bound] # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
             rev_one_minus_alpha_sqrt = torch.flipud(one_minus_alpha_sqrt) # \sqrt(1-\bar{\alpha_s}), for s in [t, 1], [t]
             rev_alpha = torch.flipud(self.alpha[0:upper_bound]) # alpha_s, for s in [t, 1], [t]
-            rev_alpha_bar_sqrt = torch.sqrt(torch.cumprod(rev_alpha, dim=0) / rev_alpha[-1]) # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
+            # rev_alpha_bar_sqrt = torch.sqrt(torch.cumprod(rev_alpha, dim=0) / rev_alpha[-1]) # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
+            rev_alpha_bar_sqrt = torch.cumprod(rev_alpha, dim=0) / rev_alpha[-1] # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
             rev_var_blur = torch.flipud(self.var_blur[:upper_bound]) # [t] 
             rev_var_blur_bar = torch.cumsum(rev_var_blur, dim=0) - rev_var_blur[-1] # [t]
             rev_var_kernel_bar = (self.input_dim / rev_var_blur_bar).unsqueeze(1) # [t, 1]
-            rev_kernel_bar = self.get_kernel(rev_var_kernel_bar) # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
+            # rev_kernel_bar = self.get_kernel(rev_var_kernel_bar) # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
+            rev_kernel_bar = self.get_kernel(rev_var_kernel_bar)**2 # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
             rev_kernel_bar[0, :] = torch.ones(self.input_dim) 
-            noise_weights.append(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt)) # [t, N]
+            # noise_weights.append(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt)) # [t, N]
+            noise_weights.append(torch.sqrt(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt))) # [t, N]
         return torch.stack(noise_weights, dim=0) # [T, N] 
 
     def get_noise_weights_stats(self):
@@ -84,10 +89,10 @@ class SignalDiffusion(nn.Module):
     def degrade_step(self, x_t_minux_1, t, task_id):
         device = x_t_minux_1.device
         if task_id in [0, 1, 4]:
-            noise_weight = self.beta[t, :].unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, N, 1, 1, 1]
+            noise_weight = torch.sqrt(torch.tensor(self.beta[t].astype(np.float32))).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, 1, 1, 1, 1]
             info_weight = self.info_weights_unbar[t, :].unsqueeze(-1).unsqueeze(-1).to(device) # equivalent original info weights, [B, N, 1, 1, 1]
         if task_id in [2, 3]:
-            noise_weight = self.beta[t, :].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, N, 1, 1, 1]
+            noise_weight = torch.sqrt(torch.tensor(self.beta[t].astype(np.float32))).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, N, 1, 1, 1]
             info_weight = self.info_weights_unbar[t, :].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent original info weights, [B, N, 1, 1, 1]
         # random seed
         # torch.manual_seed(11)
