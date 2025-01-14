@@ -178,6 +178,25 @@ class SignalDiffusion(nn.Module):
         x_0_hat = restore_fn(x_s, batch_max, cond)
         return x_0_hat
     
+    def fast_step_sampling(self, restore_fn, cond, device):
+        batch_size = cond.shape[0] # B
+        batch_max = (self.max_step-1)*torch.ones(batch_size, dtype=torch.int64)
+        # Generate degraded noise.
+        data_dim = [batch_size, self.input_dim] + self.extra_dim + [2]
+        noise = torch.randn(data_dim, dtype=torch.float32, device=device) # [B, N, S, A, 2]
+        if self.task_id in [2,3]:
+            inf_weight = (self.noise_weights[batch_max, :] + self.info_weights[batch_max, :]).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # [B, N, 1, 1, 1]
+        else:
+            inf_weight = (self.noise_weights[batch_max, :] + self.info_weights[batch_max, :]).unsqueeze(-1).unsqueeze(-1).to(device) # [B, N, 1, 1, 1]
+        x_s = inf_weight * noise # [B, N, S, A, 2]
+        # Restore data from noise.
+        for t in range(self.max_step, 0, -1): # [300, 0)
+            batch_max = (t-1)*torch.ones(batch_size, dtype=torch.int64)
+            x_s = restore_fn(x_s, batch_max, cond)
+        
+        x_0_hat = x_s
+        return x_0_hat
+    
     def native_sampling(self, restore_fn, data, cond, device):
         batch_size = cond.shape[0]
         batch_max = (self.max_step-1)*torch.ones(batch_size, dtype=torch.int64)
@@ -185,6 +204,19 @@ class SignalDiffusion(nn.Module):
         x_s = self.degrade_fn(data, batch_max,task_id = self.task_id).to(device)
         # Restore data from noise.
         x_0_hat = restore_fn(x_s, batch_max, cond)
+        return x_0_hat
+    
+    def native_step_sampling(self, restore_fn, data, cond, device):
+        batch_size = cond.shape[0]
+        batch_max = (self.max_step-1)*torch.ones(batch_size, dtype=torch.int64)
+        # Generate degraded noise.
+        x_s = self.degrade_fn(data, batch_max,task_id = self.task_id).to(device)
+        # Restore data from noise.
+        for t in range(self.max_step, 0, -1): # [300, 0)
+            batch_max = (t-1)*torch.ones(batch_size, dtype=torch.int64)
+            x_s = restore_fn(x_s, batch_max, cond)
+        
+        x_0_hat = x_s
         return x_0_hat
 
 
@@ -259,3 +291,41 @@ class GaussianDiffusion(nn.Module):
         # Restore data from noise.
         x_0_hat = restore_fn(x_s, batch_max, cond)
         return x_0_hat
+
+
+if __name__ == "__main__":
+    from params import all_params
+    params = all_params[4]
+
+    diffusion = SignalDiffusion(params)
+    batch = 1000
+    data = torch.ones((batch, 512, 1, 2), dtype=torch.float32)
+    step_degrade_data = data
+    where_to = 200
+    # step_degrade_data = diffusion.degrade_fn(data, [where_to-2 for j in range(batch)], 4)
+    # step_degrade_data = diffusion.degrade_step(step_degrade_data, [where_to-1 for j in range(batch)], 4)
+    for i in range(where_to):
+        step_degrade_data = diffusion.degrade_step(step_degrade_data, [i for j in range(batch)], 4)
+    degrade_data = diffusion.degrade_fn(data, [where_to-1 for j in range(batch)], 4)
+    print()
+    print("Jump degrade STD : ",torch.mean(torch.std(degrade_data, dim=(1,2,3))))
+    print("Jump degrade MEAN : ", torch.mean(torch.mean(degrade_data, dim=(1,2,3))))
+    print()
+    print("MEAN degrade STD : ", torch.mean(torch.std(step_degrade_data, dim=(1,2,3))))
+    print("MEAN degrade MEAN : ", torch.mean(torch.mean(step_degrade_data, dim=(1,2,3))))
+    print()
+    print("Original data STD : ", torch.mean(torch.std(data, dim=(1,2,3))))
+    print("Original data MEAN : ", torch.mean(torch.mean(data, dim=(1,2,3))))
+    # data = np.ones(1024)
+    
+    # def get_kernel(var_kernel):
+    #     samples = np.arange(0, 128) # [N]
+    #     gaussian_kernel = np.exp(-((samples - 128 // 2)**2) / (2 * var_kernel)) / np.sqrt(2 * np.pi * var_kernel) # G_t, [T, N]
+    #     gaussian_kernel = gaussian_kernel / np.sum(gaussian_kernel) # Normalized G_t, [T, N]
+    #     return gaussian_kernel
+ 
+    # kernel = get_kernel(100)
+
+    # print(np.sum(kernel))
+
+    # print(np.convolve(data, kernel, 'same'))

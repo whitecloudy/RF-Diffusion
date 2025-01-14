@@ -129,6 +129,62 @@ def save_mimo(out_dir, data, pred, cond, batch, index=0):
     plt.tight_layout()
     plt.savefig(file_name, dpi=800)
 
+def save_widar(out_dir, data, pred, cond, batch, index=0):
+    # scio.savemat(f'./dataset/save_widar/output/{batch}-{index}.mat',{'pred':pred.numpy()})
+    os.makedirs(out_dir+'/img', exist_ok=True)
+    os.makedirs(out_dir+'/img_matric/data', exist_ok=True)
+    os.makedirs(out_dir+'/img_matric/pred', exist_ok=True)
+    file_name = os.path.join(out_dir+'/img', f'out-{batch}-{index}.jpg')
+    file_name_data = os.path.join(out_dir+'/img_matric/data', f'out-{batch}-{index}.jpg')
+    file_name_pred = os.path.join(out_dir+'/img_matric/pred', f'out-{batch}-{index}.jpg')
+    
+    data = data[0, :, 0].reshape(512)
+    pred = pred[0, :, 0].reshape(512)
+    # Compute the STFT for data and pred
+    n_fft = 24  # Choose an appropriate value for your data
+    hop_length = 17  # Choose an appropriate value for your data
+    data_spec = torch.stft(data, n_fft=n_fft, hop_length=hop_length)
+    pred_spec = torch.stft(pred, n_fft=n_fft, hop_length=hop_length)
+    # Convert the complex spectrograms to magnitude spectrograms
+    data_spec_mag = torch.abs(data_spec)
+    pred_spec_mag = torch.abs(pred_spec)
+    # Convert the magnitude spectrograms to dB scale using numpy
+    data_spec_dB = 20 * np.log10(data_spec_mag.numpy() + 1e-6)  # Adding a small constant to avoid log(0)
+    pred_spec_dB = 20 * np.log10(pred_spec_mag.numpy() + 1e-6)
+    # Create a subplot with two columns (one for each spectrogram)
+    # 绘制并保存第一个图表
+    plt.figure(figsize=(6, 3))
+    ax1 = plt.subplot(1, 2, 1)
+    im1 = ax1.matshow(data_spec_dB, cmap='viridis', origin='lower')    
+    ax1.set_title('Data Spectrogram (dB)')
+    plt.colorbar(im1, format='%+2.0f dB', ax=ax1,orientation='horizontal', pad=0.05)
+
+    ax2 = plt.subplot(1, 2, 2)
+    im2 = ax2.matshow(pred_spec_dB, cmap='viridis', origin='lower')
+    ax2.set_title('Prediction Spectrogram (dB)')
+    plt.colorbar(im2, format='%+2.0f dB', ax=ax2,orientation='horizontal', pad=0.05)
+
+    # 保存整个图表为 jpg 文件
+    plt.savefig(file_name)
+    plt.close()
+
+    # 绘制并保存第二个图表（不包括坐标轴）
+    plt.figure(figsize=(6, 7))
+    plt.imshow(data_spec_dB, cmap='viridis', origin='lower')    
+    plt.axis('off')
+    # 保存图片（不包括坐标轴）
+    plt.savefig(file_name_data, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+    # 绘制并保存第三个图表（不包括坐标轴）
+    plt.figure(figsize=(6, 7))
+    plt.imshow(pred_spec_dB, cmap='viridis', origin='lower')    
+    plt.axis('off')
+    # 保存图片（不包括坐标轴）
+    plt.savefig(file_name_pred, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+
 
 def save_wifi(out_dir, data, pred, cond, batch, index=0):
     scio.savemat(f'./dataset/wifi/output/{batch}-{index}.mat',{'pred':pred.numpy()})
@@ -262,22 +318,31 @@ def print_fid(out_dir,data_dir,task_id):
     fid_value = fid_score.calculate_fid_given_paths([real_images_folder, generated_images_folder],batch_size=1,device=device,dims=dims,num_workers=1)*corr
     print('FID value:', fid_value)
 
+import tempfile
+
 def main(args):
+    tmp_class = tempfile.TemporaryDirectory()
+    tmp_dir = tmp_class.name
+    print(tmp_dir)
     params = all_params[args.task_id]
     model_dir = args.model_dir or params.model_dir
     out_dir = args.out_dir or params.out_dir
-    if args.task_id in [0,1]:
-        fid_data_dir = params.fid_data_dir
-        fid_pred_dir = params.fid_pred_dir
+    if args.task_id in [0,1,4]:
+        # fid_data_dir = params.fid_data_dir
+        # fid_pred_dir = params.fid_pred_dir
+        fid_data_dir = tmp_dir+'/img_matric/data'
+        fid_pred_dir = tmp_dir+'/img_matric/pred'
     if args.cond_dir is not None:
         params.cond_dir = args.cond_dir
     device = torch.device(
-        'cpu') if args.device == 'cpu' else torch.device('cuda')
+            'cpu') if args.device == 'cpu' else torch.device('cuda:'+args.device)
     # Lazy load model.
-    if os.path.exists(f'{model_dir}/weights.pt'):
-        checkpoint = torch.load(f'{model_dir}/weights.pt')
+    if os.path.exists(f'{model_dir}/best_weights.pt'):
+        print("Loading ", f'{model_dir}/best_weights.pt')
+        checkpoint = torch.load(f'{model_dir}/best_weights.pt')
     else:
-        checkpoint = torch.load(model_dir)
+        print("Loading ", f'{model_dir}/weights.pt')
+        checkpoint = torch.load(f'{model_dir}/weights.pt')
     if args.task_id==0 or args.task_id==4:
         model = tfdiff_WiFi(AttrDict(params)).to(device)
     elif args.task_id==1:
@@ -308,10 +373,15 @@ def main(args):
             cond = features['cond']
             
             if args.task_id in [0, 1, 4]:
-                # pred = diffusion.sampling(model, cond, device)
-                # pred = diffusion.robust_sampling(model, cond, device)
-                # pred = diffusion.fast_sampling(model, cond, device)
-                pred = diffusion.native_sampling(model, data, cond, device)
+                if args.jump_or_step == 'jump':
+                    # pred = diffusion.sampling(model, cond, device)
+                    # pred = diffusion.robust_sampling(model, cond, device)
+                    pred = diffusion.fast_sampling(model, cond, device)
+                    # pred = diffusion.native_sampling(model, data, cond, device)
+                elif args.jump_or_step == 'step':
+                    pred = diffusion.fast_step_sampling(model, cond, device)
+                    # pred = diffusion.native_step_sampling(model, data, cond, device)
+
                 data_samples = [torch.view_as_complex(sample) for sample in torch.split(data, 1, dim=0)] # [B, [1, N, S]]
                 pred_samples = [torch.view_as_complex(sample) for sample in torch.split(pred, 1, dim=0)] # [B, [1, N, S]]
                 cond_samples = [torch.view_as_complex(sample) for sample in torch.split(cond, 1, dim=0)] # [B, [1, N, S]]
@@ -322,11 +392,11 @@ def main(args):
                     ssim_list.append(cur_ssim.item())
                     
                     if args.task_id == 1:
-                        save_fmcw(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
+                        save_fmcw(tmp_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
                     elif args.task_id == 0:
-                        save_wifi(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
+                        save_wifi(tmp_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
                     elif args.task_id == 4:
-                        save_wifi(out_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
+                        save_widar(tmp_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
                 cur_batch += 1
             if args.task_id in [2, 3]:
                 # pred = diffusion.sampling(model, cond, device)
@@ -341,10 +411,10 @@ def main(args):
                     pred = pred[:,:,0]
                     data = data[:,:,0]
                     snr_list.append(cal_SNR_EEG(pred,data))
-                    save(out_dir, pred.cpu().detach(), cond.cpu().detach(), cur_batch)
+                    save(tmp_dir, pred.cpu().detach(), cond.cpu().detach(), cur_batch)
                 else:
                     snr_list.append(cal_SNR_MIMO(pred,data))
-                    save_mimo(out_dir, data.cpu().detach(), pred.cpu().detach(), cond.cpu().detach(), cur_batch)
+                    save_mimo(tmp_dir, data.cpu().detach(), pred.cpu().detach(), cond.cpu().detach(), cur_batch)
                 cur_batch += 1
         if args.task_id in [0,1,4]:
             print_fid(fid_pred_dir,fid_data_dir,args.task_id)
@@ -365,6 +435,8 @@ if __name__ == '__main__':
                         help='directories from which to store genrated data file')
     parser.add_argument('--cond_dir', default=None,
                         help='directories from which to read condition files for generation')
-    parser.add_argument('--device', default='cuda',
+    parser.add_argument('--device', default='0',
                         help='device for data generation')
+    parser.add_argument('--jump_or_step', default='jump', type=str)
+
     main(parser.parse_args())

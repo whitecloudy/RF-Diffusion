@@ -195,7 +195,10 @@ params_widar = AttrDict(
     model_dir='./model/widar',
     data_dir=['../data/widar_preprocess'],
     out_dir='./dataset/mimo/output',
-    cond_dir=['../data/widar_preprocess'],
+    cond_dir=['../ssddata/widar_preprocess'],
+    fid_pred_dir = './dataset/widar/img_matric/pred',
+    fid_data_dir = './dataset/widar/img_matric/data',
+
     # Training params
     max_iter=None, # Unlimited number of iterations.
     early_stop=None,
