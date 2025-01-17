@@ -68,7 +68,6 @@ class tfdiffLearner:
                 data, t-1 ,self.task_id)  # degrade data, x_t-1, [B, N, S*A, 2]
             degrade_data = self.diffusion.degrade_step(
                 degrade_data_t_minus_1, t ,self.task_id)    # degrade data, x_t, [B, N, S*A, 2]
-            
             return degrade_data_t_minus_1, degrade_data
         elif self.jump_or_step == 'jump':
             degrade_data = self.diffusion.degrade_fn(
@@ -95,6 +94,8 @@ class tfdiffLearner:
         self.optimizer.load_state_dict(state_dict['optimizer'])
         self.iter = state_dict['iter']
 
+    # TODO: 이거 압축해서 데이터 저장해야 할까? 용량이 너무 큰데?
+    #       테스트 해본 결과로는 224MB가 40MB 수준으로 줄어든다.
     def save_to_checkpoint(self, filename='weights'):
         save_basename = f'{filename}-{self.iter}.pt'
         save_name = f'{self.model_dir}/{save_basename}'
@@ -208,13 +209,24 @@ class tfdiffLearner:
         B = data.shape[0]
         # random diffusion step, [B]
         t = torch.randint(0, self.diffusion.max_step, [B], dtype=torch.int64)
-        target_data, degrade_data = self.target_degrade_data(data, t)
-        # degrade_data = self.diffusion.degrade_fn(
-        #     data, t ,self.task_id)  # degrade data, tx_, [B, N, S*A, 2]
-        predicted = self.model(degrade_data, t, cond)
+        # target_data, degrade_data = self.target_degrade_data(data, t)
+        degrade_data = self.diffusion.degrade_fn(
+            data, t ,self.task_id)  # degrade data, tx_, [B, N, S*A, 2]
+        if self.jump_or_step == 'step':
+            predicted = degrade_data
+            max_t = max(t)
+            for t_step in range(max_t, -1, -1):
+                # Index of working data, [>B]
+                working_idx = torch.nonzero(torch.where(t >= 0, 1, 0), as_tuple=True)
+                predicted[working_idx] = self.model(predicted[working_idx], t[working_idx], cond[working_idx])
+                t -= 1
+        elif self.jump_or_step == 'jump':
+            predicted = self.model(degrade_data, t, cond)
+        else:
+            raise ValueError("Unexpected jump_or_step.")
         if self.task_id==3:
-            target_data = target_data.reshape(-1,512,1,2)
-        loss = self.loss_fn(target_data, predicted)
+            data = data.reshape(-1,512,1,2)
+        loss = self.loss_fn(data, predicted)
         return loss
 
 
