@@ -76,15 +76,15 @@ class MIMODataset(torch.utils.data.Dataset):
     super().__init__()
     self.filenames = []
     for path in paths:
-        self.filenames += glob(f'{path}/**/*.mat', recursive=True)
+        self.filenames += glob(f'{path}/**/*.npz', recursive=True)
 
   def __len__(self):
     return len(self.filenames)
 
   def __getitem__(self,idx):
-    dataset = scio.loadmat(self.filenames[idx])
-    data = torch.from_numpy(dataset['down_link']).to(torch.complex64)
-    cond = torch.from_numpy(dataset['up_link']).to(torch.complex64)
+    dataset = np.load(self.filenames[idx])
+    data = torch.from_numpy(dataset['data']).to(torch.complex64)
+    cond = torch.from_numpy(dataset['cond']).to(torch.complex64)
     return {
         'data': torch.view_as_real(data),
         'cond': torch.view_as_real(cond)
@@ -268,7 +268,7 @@ def from_path(params, is_distributed=False):
         persistent_workers=True)
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
-        batch_size=params.batch_size,
+        batch_size=params.val_batch_size,
         collate_fn=Collator(params).collate,
         shuffle=not is_distributed,
         num_workers=8,
@@ -276,6 +276,7 @@ def from_path(params, is_distributed=False):
         pin_memory=True,
         drop_last=True,
         persistent_workers=True)
+        
     return train_loader, val_loader
 
 
@@ -291,6 +292,7 @@ def from_path_inference(params):
     elif task_id == 3:
         dataset = EEGDataset(cond_dir)
     elif task_id == 4:
+        # dataset = WidarDataset(cond_dir, {'date' : [20181109, 20181115, 20181117, 20181118]})
         dataset = WidarDataset(cond_dir, {'date' : [20181208,]})
     else:
         raise ValueError("Unexpected task_id.")

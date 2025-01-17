@@ -99,6 +99,10 @@ def main(args):
         params.random_seed = args.random_seed
     if args.jump_or_step is not None:
         params.jump_or_step = args.jump_or_step
+    if args.val_batch_size is not None:
+        params.val_batch_size = args.val_batch_size
+    elif params.val_batch_size is None:
+        params.val_batch_size = params.batch_size
 
     params.log_dir += log_dir_suffix_name_maker(params)
     params.model_dir += log_dir_suffix_name_maker(params)
@@ -106,10 +110,11 @@ def main(args):
     torch.manual_seed(args.random_seed)
     replica_count = device_count()
     if replica_count > 1:
-        if params.batch_size % replica_count != 0:
+        if params.batch_size % replica_count != 0 or params.val_batch_size % replica_count != 0:
             raise ValueError(
-                f'Batch size {params.batch_size} is not evenly divisble by # GPUs {replica_count}.')
+                f'Batch size {params.batch_size} or {params.val_batch_size} is not evenly divisble by # GPUs {replica_count}.')
         params.batch_size = params.batch_size // replica_count
+        params.val_batch_size = params.val_batch_size // replica_count
         port = _get_free_port()
         spawn(train_distributed, args=(replica_count, port, params), nprocs=replica_count, join=True)
     else:
@@ -135,6 +140,7 @@ if __name__ == '__main__':
     parser.add_argument('--early_stop', default=None, type=int,
                     help='early stopping epoch step')
     parser.add_argument('--batch_size', default=None, type=int)
+    parser.add_argument('--val_batch_size', default=None, type=int)
     parser.add_argument('--random_seed', default=0, type=int)
     parser.add_argument('--jump_or_step', default='jump', type=str)
     parser.add_argument('--from_start', default=False, action=BooleanOptionalAction)
