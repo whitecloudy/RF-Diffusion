@@ -64,8 +64,13 @@ class tfdiffLearner:
 
     def target_degrade_data(self, data, t):
         if self.jump_or_step == 'step':
-            degrade_data_t_minus_1 = self.diffusion.degrade_fn(
-                data, t-1 ,self.task_id)  # degrade data, x_t-1, [B, N, S*A, 2]
+            # index which is t-1 is not -1, which are original image
+            t_minus_1 = t - 1
+            working_idx = torch.nonzero(torch.where(t_minus_1 >= 0, 1, 0), as_tuple=True)
+            degrade_data_t_minus_1 = data
+            # if t-1 is -1, we do not degrade
+            degrade_data_t_minus_1[working_idx] = self.diffusion.degrade_fn(
+                data[working_idx], t_minus_1[working_idx], self.task_id)  # degrade data, x_t-1, [B, N, S*A, 2]
             degrade_data = self.diffusion.degrade_step(
                 degrade_data_t_minus_1, t ,self.task_id)    # degrade data, x_t, [B, N, S*A, 2]
             return degrade_data_t_minus_1, degrade_data

@@ -87,6 +87,8 @@ class SignalDiffusion(nn.Module):
     
 
     def degrade_step(self, x_t_minux_1, t, task_id):
+        if torch.any(t < 0) or torch.any(t >= self.max_step):
+            raise IndexError("t should be in [0, T-1].")
         device = x_t_minux_1.device
         if task_id in [0, 1, 4]:
             noise_weight = torch.sqrt(torch.tensor(self.beta[t].astype(np.float32))).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, 1, 1, 1, 1]
@@ -102,6 +104,8 @@ class SignalDiffusion(nn.Module):
 
 
     def degrade_fn(self, x_0, t, task_id):
+        if torch.any(t < 0) or torch.any(t >= self.max_step):
+            raise IndexError("t should be in [0, T-1].")
         device = x_0.device
         if task_id in [0, 1, 4]:
             noise_weight = self.noise_weights[t, :].unsqueeze(-1).unsqueeze(-1).to(device) # equivalent gaussian noise weights, [B, N, 1, 1, 1]
