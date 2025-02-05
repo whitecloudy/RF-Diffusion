@@ -35,57 +35,40 @@ class SignalDiffusion(nn.Module):
 
     def get_noise_weights(self):
         noise_weights = []
-        for t in range(self.max_step):
-            upper_bound = t + 1
-            # one_minus_alpha_sqrt = torch.sqrt(1 - self.alpha[0:upper_bound]) # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
-            one_minus_alpha_sqrt = 1 - self.alpha[0:upper_bound] # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
-            rev_one_minus_alpha_sqrt = torch.flipud(one_minus_alpha_sqrt) # \sqrt(1-\bar{\alpha_s}), for s in [t, 1], [t]
-            rev_alpha = torch.flipud(self.alpha[0:upper_bound]) # alpha_s, for s in [t, 1], [t]
-            # rev_alpha_bar_sqrt = torch.sqrt(torch.cumprod(rev_alpha, dim=0) / rev_alpha[-1]) # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
-            rev_alpha_bar_sqrt = torch.cumprod(rev_alpha, dim=0) / rev_alpha[-1] # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
-            rev_var_blur = torch.flipud(self.var_blur[:upper_bound]) # [t] 
-            rev_var_blur_bar = torch.cumsum(rev_var_blur, dim=0) - rev_var_blur[-1] # [t]
-            rev_var_kernel_bar = (self.input_dim / rev_var_blur_bar).unsqueeze(1) # [t, 1]
-            # rev_kernel_bar = self.get_kernel(rev_var_kernel_bar) # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
-            rev_kernel_bar = self.get_kernel(rev_var_kernel_bar)**2 # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
-            rev_kernel_bar[0, :] = torch.ones(self.input_dim) 
-            # noise_weights.append(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt)) # [t, N]
-            noise_weights.append(torch.sqrt(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt))) # [t, N]
-        return torch.stack(noise_weights, dim=0) # [T, N] 
+        noise_weight_square = torch.zeros(self.input_dim) # [N]
 
+        for t in range(self.max_step):
+            noise_weight_square *= (self.info_weights_unbar[t] ** 2)
+            noise_weight_square += torch.ones(self.input_dim) * self.beta[t]
+            noise_weights.append(torch.sqrt(noise_weight_square).clone().detach())
+
+        # <<OLD>>
+        # for t in range(self.max_step):
+        #     upper_bound = t + 1
+        #     # one_minus_alpha_sqrt = torch.sqrt(1 - self.alpha[0:upper_bound]) # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
+        #     one_minus_alpha_sqrt = 1 - self.alpha[0:upper_bound] # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
+        #     rev_one_minus_alpha_sqrt = torch.flipud(one_minus_alpha_sqrt) # \sqrt(1-\bar{\alpha_s}), for s in [t, 1], [t]
+        #     rev_alpha = torch.flipud(self.alpha[0:upper_bound]) # alpha_s, for s in [t, 1], [t]
+        #     # rev_alpha_bar_sqrt = torch.sqrt(torch.cumprod(rev_alpha, dim=0) / rev_alpha[-1]) # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
+        #     rev_alpha_bar_sqrt = torch.cumprod(rev_alpha, dim=0) # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
+        #     rev_var_blur = torch.flipud(self.var_blur[:upper_bound]) # [t] 
+        #     rev_var_blur_bar = torch.cumsum(rev_var_blur, dim=0) # [t]
+        #     rev_var_kernel_bar = (self.input_dim / rev_var_blur_bar).unsqueeze(1) # [t, 1]
+        #     # rev_kernel_bar = self.get_kernel(rev_var_kernel_bar) # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
+        #     rev_kernel_bar = self.get_kernel(rev_var_kernel_bar)**2 # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
+        #     rev_kernel_bar[0, :] = torch.ones(self.input_dim) 
+        #     # noise_weights.append(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt)) # [t, N]
+        #     noise_weights.append(torch.sqrt(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt))) # [t, N]
+        return torch.stack(noise_weights, dim=0) # [T, N] 
+    @torch.inference_mode()
     def get_noise_weights_stats(self):
         noise_weights = []
         one_minus_alpha_sqrt = torch.sqrt(1 - self.alpha[0])
         for t in range(self.max_step):
             noise_weights.append((1 - torch.sqrt(self.alpha_bar[t])*self.gaussian_kernel_bar[t, :]) / (1 - torch.sqrt(self.alpha[0]) * self.gaussian_kernel[0, :]))
-        return one_minus_alpha_sqrt * torch.stack(noise_weights, dim=0) # [T, N]
-
-    ## Depracated: numerical instable when params.blur_schedule is high, kernel may divided by 0.
-    def get_noise_weights_div(self):
-        noise_weights = []
-        for t in range(self.max_step):
-            upper_bound = t + 1
-            one_minus_alpha_sqrt = torch.sqrt(1 - self.alpha[:upper_bound]) # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
-            ratio_alpha_bar_sqrt = torch.sqrt(self.alpha_bar[t] / self.alpha_bar[:upper_bound]) # \sqrt(\bar{\alpha_t} / \bar{\alpha_s}), for s in [1, t], [t]
-            ratio_kernel_bar = self.gaussian_kernel_bar[t, :] / self.gaussian_kernel_bar[:upper_bound, :] # \bar{G_t} / \bar{G_s}, for s in [1, t], [t, N]
-            noise_weights.append(torch.mv((ratio_alpha_bar_sqrt.unsqueeze(-1) * ratio_kernel_bar).transpose(0, 1), one_minus_alpha_sqrt)) # [t, N]
-        return torch.stack(noise_weights, dim=0) # [T, N]
+        return one_minus_alpha_sqrt * torch.stack(noise_weights, dim=0) # [T, N]    
     
-    ## Depracated: numerical instable when params.blur_schedule is high, amplitude of kernel may overflow.
-    def get_noise_weights_prod(self):
-        noise_weights = []
-        for t in range(self.max_step):
-            upper_bound = t + 1
-            one_minus_alpha_sqrt = torch.sqrt(1 - self.alpha[0:upper_bound]) # \sqrt(1-\bar{\alpha_s}), for s in [1, t], [t]
-            rev_one_minus_alpha_sqrt = torch.flipud(one_minus_alpha_sqrt) # \sqrt(1-\bar{\alpha_s}), for s in [t, 1], [t]
-            rev_alpha = torch.flipud(self.alpha[0:upper_bound]) # alpha_s, for s in [t, 1], [t]
-            rev_alpha_bar_sqrt = torch.sqrt(torch.cumprod(rev_alpha, dim=0) / rev_alpha[-1]) # \sqrt{\bar{\alpha_t} / \bar{\alpha_s}}, for s in [t, 1], [t]
-            rev_kernel = torch.flipud(self.gaussian_kernel[:upper_bound, :]) # G_s, for s in [t, 1], [t, N]
-            rev_kernel_bar = torch.cumprod(rev_kernel, dim=0) / rev_kernel[-1, :] # \bar{G_t} / \bar{G_s}, for s in [t, 1], [t, N]
-            noise_weights.append(torch.mv((rev_alpha_bar_sqrt.unsqueeze(-1) * rev_kernel_bar).transpose(0, 1), rev_one_minus_alpha_sqrt)) # [t, N]
-        return torch.stack(noise_weights, dim=0) # [T, N] 
-    
-
+    @torch.inference_mode()
     def degrade_step(self, x_t_minux_1, t, task_id):
         if torch.any(t < 0) or torch.any(t >= self.max_step):
             raise IndexError("t should be in [0, T-1].")
