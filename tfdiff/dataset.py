@@ -237,6 +237,7 @@ class Collator:
 
 def from_path(params, is_distributed=False):
     data_dir = params.data_dir
+    val_data_dir = params.cond_dir
     task_id = params.task_id
     if task_id == 0:
         dataset = WiFiDataset(data_dir)
@@ -244,6 +245,8 @@ def from_path(params, is_distributed=False):
         dataset = FMCWDataset(data_dir)
     elif task_id == 2:
         dataset = MIMODataset(data_dir)
+        # train_dataset = MIMODataset(data_dir)
+        # val_dataset = MIMODataset(val_data_dir)
     elif task_id == 3:
         dataset = EEGDataset(data_dir)
     elif task_id == 4:
@@ -259,7 +262,6 @@ def from_path(params, is_distributed=False):
 
     # only for testing purpose
     # train_dataset, val_dataset, dummy = torch.utils.data.random_split(dataset, [32, 16, total_len-32-16])
-
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=params.batch_size,
@@ -268,7 +270,6 @@ def from_path(params, is_distributed=False):
         num_workers=8,
         sampler=DistributedSampler(train_dataset) if is_distributed else None,
         pin_memory=True,
-        drop_last=True,
         persistent_workers=True)
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
@@ -278,7 +279,6 @@ def from_path(params, is_distributed=False):
         num_workers=8,
         sampler=DistributedSampler(val_dataset) if is_distributed else None,
         pin_memory=True,
-        drop_last=True,
         persistent_workers=True)
         
     return train_loader, val_loader

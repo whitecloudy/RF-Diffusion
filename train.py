@@ -71,10 +71,11 @@ def train_distributed(replica_id, replica_count, port, params):
     _train_impl(replica_id, model, train_dataset, val_dataset, params, is_distributed=True)
 
 
-def log_dir_suffix_name_maker(params):
+def log_dir_suffix_name_maker(params, suffix):
     name_list = []
     name_list.append(params.random_seed)
     name_list.append(params.jump_or_step)
+    name_list.append(str(suffix))
     return '/'+('-'.join([str(name) for name in name_list]))
 
 
@@ -107,8 +108,9 @@ def main(args):
     elif params.val_batch_size is None:
         params.val_batch_size = params.batch_size
 
-    params.log_dir += log_dir_suffix_name_maker(params)
-    params.model_dir += log_dir_suffix_name_maker(params)
+    suffix = 'random_split_no_freq_blur'
+    params.log_dir += log_dir_suffix_name_maker(params, suffix=suffix)
+    params.model_dir += log_dir_suffix_name_maker(params, suffix=suffix)
     
     torch.manual_seed(args.random_seed)
     replica_count = device_count()

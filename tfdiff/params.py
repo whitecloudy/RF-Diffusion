@@ -108,7 +108,9 @@ params_mimo = AttrDict(
     log_dir='./log/mimo',
     model_dir='./model/mimo/b32-256-200s',
     # data_dir=['./dataset/mimo/raw'],
-    data_dir=['../ssddata/RENEW/ArgosCSI-96x8-2016-05-01-06-57-58-2.4GHz-continuousmobile', '../ssddata/RENEW/ArgosCSI-96x8-2016-11-04-05-37-37_2.4GHz_track_left_to_right_NLOS'],
+    data_dir=['../ssddata/RENEW/ArgosCSI-96x8-2016-05-01-06-57-58-2.4GHz-continuousmobile', 
+              '../ssddata/RENEW/ArgosCSI-96x8-2016-11-04-05-37-37_2.4GHz_track_left_to_right_NLOS',
+              '../ssddata/RENEW/ArgosCSI-96x2-2016-12-07-03-00-36_rotation_mob_horizontal_omni'],
     out_dir='./dataset/mimo/output',
     cond_dir=['../ssddata/RENEW/ArgosCSI-96x2-2016-12-07-03-00-36_rotation_mob_horizontal_omni'],
     # cond_dir=['./dataset/mimo/cond'],
@@ -143,8 +145,8 @@ params_mimo = AttrDict(
     max_step=200,
     early_stop=None,
     # variance of the guassian blur applied on the spectrogram on each diffusion step [T]
-    blur_schedule=((0.1**2) * np.ones(200)).tolist(),
-    # blur_schedule=((0.0**2) * np.ones(200)).tolist(),
+    # blur_schedule=((0.1**2) * np.ones(200)).tolist(),
+    blur_schedule=((0.0**2) * np.ones(200)).tolist(),
     # \beta_t, noise level added to the signal on each diffusion step [T]
     noise_schedule=np.linspace(5e-4, 0.1, 200).tolist(),
 )
