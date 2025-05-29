@@ -70,12 +70,12 @@ def cal_SNR_EEG(predict, truth):
 
 def cal_SNR_MIMO(predict, truth):
     if torch.is_tensor(predict):
-        predict = predict.detach().cpu().numpy().squeeze(0)
+        predict = predict.detach().cpu().numpy()
     if torch.is_tensor(truth):
-        truth = truth.detach().cpu().numpy().squeeze(0)
+        truth = truth.detach().cpu().numpy()
     # Recombine the real and imaginary parts to form complex values
-    predict_complex = (predict[:,:,:,0] + 1j * predict[:,:,:, 1])
-    truth_complex = (truth[:,:,:, 0] + 1j * truth[:,:,:, 1])
+    predict_complex = (predict[:,:,:,:, 0] + 1j * predict[:,:,:,:, 1])
+    truth_complex = (truth[:,:,:,:, 0] + 1j * truth[:,:,:,:, 1])
     PS = np.sum(np.abs(truth_complex)**2, axis=(-1, -2, -3))  # power of signal
     PN = np.sum(np.abs(predict_complex - truth_complex)**2, axis=(-1, -2, -3))  # power of noise
     ratio = PS / PN
@@ -351,6 +351,8 @@ def main(args):
         model = tfdiff_mimo(AttrDict(params)).to(device)
     elif args.task_id==3:
         model = tfdiff_eeg(AttrDict(params)).to(device)
+
+    torch.manual_seed(args.random_seed)
     
     model.load_state_dict(checkpoint['model'])
     model.eval()
@@ -399,10 +401,14 @@ def main(args):
                         save_widar(tmp_dir, d_sample.cpu().detach(), p_sample.cpu().detach(), cond_samples[b].cpu().detach(), cur_batch,b)
                 cur_batch += 1
             if args.task_id in [2, 3]:
-                # pred = diffusion.sampling(model, cond, device)
-                # pred = diffusion.robust_sampling(model, cond, device)
-                pred = diffusion.fast_sampling(model, cond, device)
-                # pred, _ = diffusion.native_sampling(model, data, cond, device)
+                if args.jump_or_step == 'jump':
+                    # pred = diffusion.sampling(model, cond, device)
+                    # pred = diffusion.robust_sampling(model, cond, device)
+                    pred = diffusion.fast_sampling(model, cond, device)
+                    # pred = diffusion.native_sampling(model, data, cond, device)
+                elif args.jump_or_step == 'step':
+                    pred = diffusion.fast_step_sampling(model, cond, device)
+                    # pred = diffusion.native_step_sampling(model, data, cond, device)
                 if args.task_id == 3:
                     pred = pred.squeeze(2)
                     pred = pred.squeeze(2)
@@ -438,5 +444,6 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='0',
                         help='device for data generation')
     parser.add_argument('--jump_or_step', default='jump', type=str)
+    parser.add_argument('--random_seed', default=0, type=int)
 
     main(parser.parse_args())

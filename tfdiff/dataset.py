@@ -76,12 +76,16 @@ class MIMODataset(torch.utils.data.Dataset):
     super().__init__()
     self.filenames = []
     for path in paths:
+        # self.filenames += glob(f'{path}/**/*.mat', recursive=True)
         self.filenames += glob(f'{path}/**/*.npz', recursive=True)
 
   def __len__(self):
     return len(self.filenames)
 
   def __getitem__(self,idx):
+    # dataset = scio.loadmat(self.filenames[idx])
+    # data = torch.from_numpy(dataset['down_link']).to(torch.complex64)
+    # cond = torch.from_numpy(dataset['up_link']).to(torch.complex64)
     dataset = np.load(self.filenames[idx])
     data = torch.from_numpy(dataset['data']).to(torch.complex64)
     cond = torch.from_numpy(dataset['cond']).to(torch.complex64)
@@ -247,11 +251,11 @@ def from_path(params, is_distributed=False):
     else:
         raise ValueError("Unexpected task_id.")
 
-    total_len = len(dataset)
+    total_len = int(len(dataset))
     train_len = int(total_len*0.8)
-    val_len = total_len-train_len
+    val_len = (total_len-train_len)
     
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_len, val_len])
+    train_dataset, val_dataset, dummy = torch.utils.data.random_split(dataset, [train_len, val_len, len(dataset)-train_len-val_len])
 
     # only for testing purpose
     # train_dataset, val_dataset, dummy = torch.utils.data.random_split(dataset, [32, 16, total_len-32-16])

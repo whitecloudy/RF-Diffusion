@@ -307,6 +307,7 @@ class tfdiff_mimo(nn.Module):
         self.tf_block = TimeFrequencyDiffusion(self.params)
 
     def forward(self, x, t, c):
+        t = t-1
         x_s = x.reshape([-1]+self.extra_dim+[2])  # [B*N, S, A, 2] 
         c_s = c.reshape([-1]+self.cond_dim+[2])  # [B*N, [C], 2]
         x_s = self.spatial_block(x_s, t.repeat(

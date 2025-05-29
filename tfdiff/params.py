@@ -107,18 +107,21 @@ params_mimo = AttrDict(
     task_id=2,
     log_dir='./log/mimo',
     model_dir='./model/mimo/b32-256-200s',
-    data_dir=['./dataset/mimo/raw'],
+    # data_dir=['./dataset/mimo/raw'],
+    data_dir=['../ssddata/RENEW/ArgosCSI-96x8-2016-05-01-06-57-58-2.4GHz-continuousmobile', '../ssddata/RENEW/ArgosCSI-96x8-2016-11-04-05-37-37_2.4GHz_track_left_to_right_NLOS'],
     out_dir='./dataset/mimo/output',
-    cond_dir=['./dataset/mimo/cond'],
+    cond_dir=['../ssddata/RENEW/ArgosCSI-96x2-2016-12-07-03-00-36_rotation_mob_horizontal_omni'],
+    # cond_dir=['./dataset/mimo/cond'],
     # Training params
     max_iter=None, # Unlimited number of iterations.
     # for inference use
     batch_size = 8,
+    val_batch_size = 128,
     # batch_size=24,
     learning_rate=1e-4,
     max_grad_norm=None,
     # Inference params
-    inference_batch_size=1,
+    inference_batch_size=8,
     robust_sampling=True,
     # Data params
     sample_rate=14,
@@ -138,8 +141,10 @@ params_mimo = AttrDict(
     # Diffusion params
     signal_diffusion=True,
     max_step=200,
+    early_stop=None,
     # variance of the guassian blur applied on the spectrogram on each diffusion step [T]
     blur_schedule=((0.1**2) * np.ones(200)).tolist(),
+    # blur_schedule=((0.0**2) * np.ones(200)).tolist(),
     # \beta_t, noise level added to the signal on each diffusion step [T]
     noise_schedule=np.linspace(5e-4, 0.1, 200).tolist(),
 )
@@ -193,7 +198,7 @@ params_widar = AttrDict(
     task_id=4,
     log_dir='./log/widar',
     model_dir='./model/widar',
-    data_dir=['../data/widar_preprocess'],
+    data_dir=['../ssddata/widar_preprocess'],
     out_dir='./dataset/mimo/output',
     cond_dir=['../ssddata/widar_preprocess'],
     fid_pred_dir = './dataset/widar/img_matric/pred',
@@ -208,7 +213,7 @@ params_widar = AttrDict(
     learning_rate=1e-3,
     max_grad_norm=None,
     # Inference params
-    inference_batch_size=1,
+    inference_batch_size=16,
     robust_sampling=True,
     # Data params
     sample_rate=512,
@@ -231,6 +236,7 @@ params_widar = AttrDict(
     blur_schedule=((0.1**2) * np.ones(200)).tolist(),
     # \beta_t, noise level added to the signal on each diffusion step [T]
     noise_schedule=np.linspace(5e-4, 0.1, 200).tolist(),
+    # noise_schedule=np.linspace(0.5, 0.5, 200).tolist(),
 )
 
 

@@ -21,7 +21,7 @@ def _get_free_port():
     with socketserver.TCPServer(('localhost', 0), None) as s:
         return s.server_address[1]
 
-def _train_impl(replica_id, model, train_dataset, val_dataset, params):
+def _train_impl(replica_id, model, train_dataset, val_dataset, params, is_distributed=False):
     opt = torch.optim.AdamW(model.parameters(), lr=params.learning_rate)
     learner = tfdiffLearner(params.log_dir, params.model_dir, model, train_dataset, val_dataset, opt, params)
     learner.proc_id = dist.get_rank()
@@ -33,7 +33,7 @@ def _train_impl(replica_id, model, train_dataset, val_dataset, params):
             if os.path.exists(params.log_dir):
                 import shutil
                 shutil.rmtree(params.log_dir)
-    learner.train(max_iter=params.max_iter, max_epochs=params.max_epochs)
+    learner.train(max_iter=params.max_iter, max_epochs=params.max_epochs, is_distributed=is_distributed)
 
 
 def train(params):
@@ -68,7 +68,7 @@ def train_distributed(replica_id, replica_count, port, params):
     else:    
         raise ValueError("Unexpected task_id.")
     model = DistributedDataParallel(model, device_ids=[replica_id])
-    _train_impl(replica_id, model, train_dataset, val_dataset, params)
+    _train_impl(replica_id, model, train_dataset, val_dataset, params, is_distributed=True)
 
 
 def log_dir_suffix_name_maker(params):
@@ -79,6 +79,9 @@ def log_dir_suffix_name_maker(params):
 
 
 def main(args):
+    os.environ['CUDA_LAUNCH_BLOCKING']="1"
+    os.environ['TORCH_USE_CUDA_DSA']="1"
+
     params = all_params[args.task_id]
     if args.batch_size is not None:
         params.batch_size = args.batch_size
